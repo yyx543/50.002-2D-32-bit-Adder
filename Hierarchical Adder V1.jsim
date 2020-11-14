@@ -1,0 +1,109 @@
+.include "nominal.jsim"
+.include "stdcell.jsim"
+.include "2dcheckoff_3ns.jsim"
+
+.subckt andv2 A B C
+Xnand1 A B D nand2
+Xinv1 D C inverter
+.ends
+
+.subckt orv2 A B C
+Xnor A B xC nor2
+Xinv xC C inverter
+.ends
+
+.subckt xorv2 A B C
+Xnand6 A B D nand2
+Xnand7 A D C1 nand2
+Xnand8 B D C2 nand2
+Xnand9 C1 C2 C nand2
+.ends
+
+*Generate G and P
+*inp A B
+*output G P
+.subckt genpg A B G P
+Xxorx1 A B P xorv2
+Xandx1 A B G and2
+.ends
+
+*blockx
+*inp Gprev Pprev Gi Pi
+*output Gnew Pnew
+*Gnew = (Pi AND Gprev) OR Gi
+*Pnew = Pi AND Pprev
+.subckt blockx Gprev Pprev Gi Pi Gnew Pnew
+Xaoi21x Pi Gprev Gi xGnew aoi21
+Xinvx xGnew Gnew inverter
+Xandy1 Pi Pprev Pnew andv2
+.ends
+
+*blocky
+*inp Gprev Gi Pi
+*output Gnew
+*Does not generate Pnew like blockx; to reduce number of gates
+.subckt blocky Gprev Gi Pi Gnew
+Xaoi21y Pi Gprev Gi xGnew aoi21
+Xinvy xGnew Gnew inverter
+.ends
+
+.subckt link A B
+.connect A B
+.ends
+
+.subckt adder32 op0 A[31:0] B[31:0] S[31:0] z v n
+*Check Addition or Subtraction
+Xxor1 B[31:0] op0#32 XB[31:0] xor2
+
+*Generate G and P
+Xgenpg0 A0 XB0 G0 P0c0 genpg
+Xgen0 op0 G0 P0c0 G0c0 blocky
+Xgenpg A[31:1] XB[31:1] G0c[31:1] P0c[31:1] genpg
+
+*Row1
+Xrow1x G0c[30:1] P0c[30:1] G0c[31:2] P0c[31:2] G1c[31:2] P1c[31:2] blockx
+Xrow1y G0c0 G0c1 P0c1 G1c1 blocky
+Xrow1linkg G0c0 G1c0 link
+*Row2
+Xrow2x G1c[29:2] P1c[29:2] G1c[31:4] P1c[31:4] G2c[31:4] P2c[31:4] blockx
+Xrow2y G1c[1:0] G1c[3:2] P1c[3:2] G2c[3:2] blocky
+Xrow2linkg G1c[1:0] G2c[1:0] link
+*Row3
+Xrow3x G2c[27:4] P2c[27:4] G2c[31:8] P2c[31:8] G3c[31:8] P3c[31:8] blockx
+Xrow3y G2c[3:0] G2c[7:4] P2c[7:4] G3c[7:4] blocky
+Xrow3linkg G2c[3:0] G3c[3:0] link
+*Row4
+Xrow4x G3c[23:8] P3c[23:8] G3c[31:16] P3c[31:16] G4c[31:16] P4c[31:16] blockx
+Xrow4y G3c[7:0] G3c[15:8] P3c[15:8] G4c[15:8] blocky
+Xrow4linkg G3c[7:0] G4c[7:0] link
+*Row5
+Xrow5y G4c[15:0] G4c[31:16] P4c[31:16] G5c[31:16] blocky
+Xrow5linkg G4c[15:0] G5c[15:0] link
+
+*Generating S
+*Ci = Gi
+*Si = Ci XOR initialPi
+Xxors0 P0c0 op0 S0 xor2
+Xxors P0c[31:1] G5c[30:0] S[31:1] xor2
+
+*Generating z
+*z = NOT ((S0 OR S1 OR S2 OR S3) OR (S4 OR S5 OR S6 OR S7) OR (S8 OR S9 OR S10 OR S11) OR (S12 OR S13 OR S14 OR S15) OR (S16 OR S17 OR S18 OR S19) OR (S20 OR S21 OR S22 OR S23) OR (S24 OR S25 OR S26 OR S27) OR (S28 OR S29 OR S30 OR S31))
+Xnorz1 S[31:16] S[15:0] Sa[15:0] nor2
+Xnandz1 Sa[15:8] Sa[7:0] Sb[7:0] nand2
+Xnorz2 Sb[7:4] Sb[3:0] Sc[3:0] nor2
+Xnandz2 Sc[3:2] Sc[1:0] Sd[1:0] nand2
+Xnorz3 Sd1 Sd0 z nor2
+
+*Generating v
+*v = (A AND B AND NOT S) OR (NOT A AND NOT B AND S)
+*v = (A NAND B NAND NOT S) NAND (NOT A NAND NOT B NAND S)
+Xnandv1 A31 XB31 xAB nand2
+Xorv2v S31 xAB SxAB orv2
+Xnorv1 A31 XB31 nAB nor2
+Xnandv3 S31 nAB SnAB nand2
+Xnandv4 SxAB SnAB v nand2
+
+*Generating n
+.connect S31 n
+
+.ends
